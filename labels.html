@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MycoQR labels</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Arial, Helvetica, sans-serif; background: #eef1ee; color: #1b1b1b; }
+  .panel { max-width: 980px; margin: 16px auto; padding: 16px 20px; background: #fff; border: 1px solid #d5dbd5; border-radius: 8px; }
+  .panel h1 { margin: 0 0 12px; font-size: 20px; }
+  .fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px 16px; }
+  .fields label { display: block; font-size: 12px; font-weight: bold; color: #375623; }
+  .fields input, .fields select { width: 100%; margin-top: 3px; padding: 7px 8px; font-size: 14px; border: 1px solid #b9c2b9; border-radius: 5px; }
+  .actions { margin-top: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  button { padding: 9px 18px; font-size: 15px; font-weight: bold; color: #fff; background: #2e6b34; border: 0; border-radius: 6px; cursor: pointer; }
+  .hint { font-size: 12px; color: #666; }
+  .warn { color: #b00020; font-weight: bold; }
+
+  .sheet { width: 210mm; height: 297mm; margin: 12px auto; padding: 8mm; background: #fff; box-shadow: 0 1px 6px rgba(0,0,0,.25);
+           display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
+  .sheet.r5 { grid-template-rows: repeat(5, 1fr); }
+  .sheet.r6 { grid-template-rows: repeat(6, 1fr); }
+
+  .label { display: flex; flex-direction: column; border: 0.35mm solid #222; overflow: hidden; min-height: 0; }
+  .label .head { background: #000; color: #fff; font-weight: bold; text-align: center; font-size: 9.5pt; letter-spacing: .3px; padding: 1mm 0; }
+  .label .body { flex: 1; display: flex; min-height: 0; }
+  .label .rows { flex: 1; display: grid; grid-template-columns: 27mm 1fr; grid-auto-rows: 1fr; min-width: 0; }
+  .label .k, .label .v { display: flex; align-items: center; padding: 0 1.2mm; border-top: 0.2mm solid #9aa59a; font-weight: bold; min-width: 0; }
+  .label .k { background: #e2efda; color: #375623; font-size: 7.4pt; border-right: 0.2mm solid #9aa59a; }
+  .label .v { justify-content: center; text-align: center; font-size: 7.8pt; line-height: 1.05; }
+  .label .qr { width: 29mm; border-left: 0.2mm solid #9aa59a; border-top: 0.2mm solid #9aa59a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .8mm; }
+  .label .qr svg { width: 26mm; height: 26mm; display: block; }
+  .label .qr .id { font-size: 6.4pt; font-weight: bold; }
+  .sheet.r5 .label .k { font-size: 8pt; }
+  .sheet.r5 .label .v { font-size: 8.6pt; }
+
+  @page { size: A4; margin: 0; }
+  @media print {
+    body { background: #fff; }
+    .panel { display: none; }
+    .sheet { margin: 0; box-shadow: none; page-break-after: always; }
+    .label .head, .label .k { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+</head>
+<body>
+
+<div class="panel">
+  <h1>MycoQR label sheet</h1>
+  <div class="fields">
+    <label>Company<input id="company" value="THE FUNGI COMPANY"></label>
+    <label>Species / Variety<input id="species" value="Lion's Mane (H. Erinaceus)"></label>
+    <label>Batch #<input id="batch" value="LM-26-B02"></label>
+    <label>Inoculation date<input id="inoc" type="date"></label>
+    <label>Days to fruiting<input id="days" type="number" min="0" value="21"></label>
+    <label>Spawn source &amp; gen<input id="spawn" value="S-002 : WPM (G1)"></label>
+    <label>Number of bags<input id="bags" type="number" min="1" max="99" value="10"></label>
+    <label>Labels per A4 page<select id="per"><option value="10">10 (taller)</option><option value="12">12</option></select></label>
+  </div>
+  <div class="actions">
+    <button id="print">Print labels</button>
+    <span class="hint">In the print dialog: A4, scale 100 %, margins None, background graphics ON.</span>
+    <span class="hint warn" id="msg"></span>
+  </div>
+</div>
+
+<div id="sheets"></div>
+
+<script src="vendor/qrcode.js"></script>
+<script>
+(function () {
+  var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var ids = ['company','species','batch','inoc','days','spawn','bags','per'];
+  var el = {};
+  ids.forEach(function (id) { el[id] = document.getElementById(id); });
+
+  // restore last-used values
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem('mq_label_form') || '{}'); } catch (e) {}
+  ids.forEach(function (id) { if (saved[id] != null && saved[id] !== '') el[id].value = saved[id]; });
+  if (!el.inoc.value) el.inoc.value = isoDate(new Date());
+
+  qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+
+  function isoDate(d) {
+    return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  }
+  function pad(n, w) { n = String(n); while (n.length < (w || 2)) n = '0' + n; return n; }
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function clean(s) { return String(s).replace(/\|/g, '/').trim(); }
+  function parseIso(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+
+  function render() {
+    var v = {};
+    ids.forEach(function (id) { v[id] = el[id].value; });
+    try { localStorage.setItem('mq_label_form', JSON.stringify(v)); } catch (e) {}
+
+    var msg = document.getElementById('msg');
+    var batch = clean(v.batch).toUpperCase().replace(/\s+/g, '');
+    var n = Math.max(1, Math.min(99, parseInt(v.bags, 10) || 1));
+    var days = Math.max(0, parseInt(v.days, 10) || 0);
+    var per = parseInt(v.per, 10) === 12 ? 12 : 10;
+    var out = document.getElementById('sheets');
+    out.innerHTML = '';
+    msg.textContent = '';
+
+    if (!/^[A-Z0-9][A-Z0-9-]*$/.test(batch)) { msg.textContent = 'Batch # may only use letters, digits and dashes.'; return; }
+    if (!v.inoc) { msg.textContent = 'Pick an inoculation date.'; return; }
+
+    var d0 = parseIso(v.inoc);
+    var d1 = new Date(d0.getFullYear(), d0.getMonth(), d0.getDate() + days);
+    var inocTxt = pad(d0.getDate()) + '-' + MONTHS[d0.getMonth()] + '-' + String(d0.getFullYear()).slice(2);
+    var fruitTxt = pad(d1.getDate()) + '-' + MONTHS[d1.getMonth()] + '-' + d1.getFullYear() + ' (+' + days + ' Days)';
+    var width = n > 9 ? 2 : 2; // bag number is always at least two digits
+
+    var sheet = null;
+    for (var i = 1; i <= n; i++) {
+      if ((i - 1) % per === 0) {
+        sheet = document.createElement('div');
+        sheet.className = 'sheet r' + (per / 2);
+        out.appendChild(sheet);
+      }
+      var bagId = batch + '-' + pad(i, width);
+      // payload read by the MycoQR app: MQR1|bag id|bag count|species|inoculation|days to fruiting|spawn
+      var payload = ['MQR1', bagId, n, clean(v.species), v.inoc, days, clean(v.spawn)].join('|');
+      var qr = qrcode(0, 'M');
+      qr.addData(payload, 'Byte');
+      qr.make();
+      var svg = qr.createSvgTag({ cellSize: 4, margin: 8, scalable: true });
+
+      var label = document.createElement('div');
+      label.className = 'label';
+      label.innerHTML =
+        '<div class="head">' + esc(v.company) + '</div>' +
+        '<div class="body"><div class="rows">' +
+          row('Species / Variety', v.species) +
+          row('Inoculation Date', inocTxt) +
+          row('Expected Fruiting', fruitTxt) +
+          row('Batch #', batch) +
+          row('Spawn Source &amp; Gen', v.spawn, true) +
+          row('Bag ID', 'Bag ' + pad(i, width) + '/' + pad(n, width)) +
+          row('Yield :', '') +
+        '</div><div class="qr">' + svg + '<div class="id">' + esc(bagId) + '</div></div></div>';
+      sheet.appendChild(label);
+    }
+  }
+  function row(k, val, rawKey) {
+    return '<div class="k">' + (rawKey ? k : esc(k)) + '</div><div class="v">' + esc(val) + '</div>';
+  }
+
+  ids.forEach(function (id) { el[id].addEventListener('input', render); });
+  document.getElementById('print').addEventListener('click', function () { window.print(); });
+  render();
+})();
+</script>
+</body>
+</html>
