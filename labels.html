@@ -49,14 +49,19 @@
 <div class="panel">
   <h1>MycoQR label sheet</h1>
   <div class="fields">
-    <label>Company<input id="company" value="THE FUNGI COMPANY"></label>
-    <label>Species / Variety<input id="species" value="Lion's Mane (H. Erinaceus)"></label>
+    <label>Header<input id="company" value="THE FUNGI COMPANY"></label>
+    <label>Species / Variety<input id="species" list="speciesList" value="Lion's Mane (H. Erinaceus)" autocomplete="off">
+      <datalist id="speciesList">
+        <option value="Lion's Mane (H. Erinaceus)">
+        <option value="King Oyster (P. Eryngii)">
+        <option value="Reishi (G. Lucidum)">
+      </datalist></label>
     <label>Batch #<input id="batch" value="LM-26-B02"></label>
     <label>Inoculation date<input id="inoc" type="date"></label>
     <label>Days to fruiting<input id="days" type="number" min="0" value="21"></label>
     <label>Spawn source &amp; gen<input id="spawn" value="S-002 : WPM (G1)"></label>
     <label>Number of bags<input id="bags" type="number" min="1" max="99" value="10"></label>
-    <label>Labels per A4 page<select id="per"><option value="10">10 (taller)</option><option value="12">12</option></select></label>
+    <label>Labels per A4 page<select id="per"><option value="12">12 (recommended)</option><option value="10">10 (taller)</option></select></label>
   </div>
   <div class="actions">
     <button id="print">Print labels</button>
@@ -154,6 +159,43 @@
   }
 
   ids.forEach(function (id) { el[id].addEventListener('input', render); });
+
+  // Species: the browser only lists choices that match what is typed, so empty the box while it is
+  // being picked from and put the old value back if nothing was chosen.
+  var keptSpecies = '';
+  el.species.addEventListener('focus', function () {
+    keptSpecies = this.value; this.placeholder = keptSpecies; this.value = '';
+  });
+  el.species.addEventListener('blur', function () {
+    if (!this.value.trim()) this.value = keptSpecies;
+    this.placeholder = '';
+    if (this.value !== keptSpecies) syncPrefix();
+    render();
+  });
+  el.species.addEventListener('input', function () {
+    if (SPECIES_CODE[this.value.trim().toLowerCase()]) { syncPrefix(); render(); }   // picked from the list
+  });
+
+  // Batch # starts with a species code (LM-26-B02). Swap just those letters when the species changes.
+  var SPECIES_CODE = { "lion's mane (h. erinaceus)": 'LM', 'king oyster (p. eryngii)': 'KO', 'reishi (g. lucidum)': 'GL' };
+  function speciesCode(name) {
+    var known = SPECIES_CODE[name.trim().toLowerCase()];
+    if (known) return known;
+    // any other species: initials of the first two words, or the first two letters of a single word
+    var words = name.split('(')[0].replace(/[^A-Za-z\s]/g, '').trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return '';
+    return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2)).toUpperCase();
+  }
+  function syncPrefix() {
+    var code = speciesCode(el.species.value);
+    if (!code) return;
+    var b = el.batch.value.trim();
+    el.batch.value = /^[A-Za-z]+(?=-|$)/.test(b) ? b.replace(/^[A-Za-z]+/, code) : b;
+  }
+  el.species.addEventListener('keydown', function (e) {
+    // start editing the current name instead of retyping it
+    if (!this.value && (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Backspace')) { this.value = keptSpecies; e.preventDefault(); }
+  });
   document.getElementById('print').addEventListener('click', function () { window.print(); });
   render();
 })();

@@ -98,15 +98,18 @@
     var b = batches[batchOf(bag)] || {};
     var harvests = live('harvest', bag);
     var discard = live('discard', bag)[0];
+    var fruiting = live('fruiting', bag)[0];
     var age = daysSince(b.inoc);
     var h = '<button class="back" data-act="scan">&lsaquo; Scan next bag</button>';
     h += '<div class="card"><div class="row"><p class="bagid">' + esc(bag) + '</p>' +
-         '<span class="tag fit' + (discard ? ' red">Discarded' : '">Active') + '</span></div>' +
+         '<span class="tag fit' + (discard ? ' red">Discarded' : fruiting ? '">Fruiting' : '">Incubating') + '</span></div>' +
          '<div class="kv" style="margin-top:10px">' +
          '<div>Species</div><div>' + esc(b.species || '-') + '</div>' +
          '<div>Bag</div><div>' + bagNo(bag) + (b.bags ? ' of ' + b.bags : '') + '</div>' +
          '<div>Inoculated</div><div>' + fmtDate(b.inoc) + (age != null ? ' (day ' + age + ')' : '') + '</div>' +
-         '<div>Spawn</div><div>' + esc(b.spawn || '-') + '</div></div>' +
+         '<div>Spawn</div><div>' + esc(b.spawn || '-') + '</div>' +
+         (fruiting ? '<div>Sent to fruiting</div><div>' + fmtDate(fruiting.ts) + ' (day ' + daysSince(localIso(new Date(fruiting.ts))) + ')</div>' : '') +
+         '</div>' +
          '<div class="stat"><div><b>' + grams(bagTotal(bag)) + '</b><span>TOTAL YIELD</span></div>' +
          '<div><b>' + harvests.length + '</b><span>FLUSHES</span></div></div></div>';
 
@@ -115,6 +118,10 @@
            (discard.note ? ' - ' + esc(discard.note) : '') + '</div>' +
            '<button class="btn ghost small" data-act="void" data-id="' + discard.id + '">Undo discard</button></div>';
     } else {
+      if (!fruiting) {
+        h += '<div class="card"><h2>Bag opened?</h2><div class="muted">Tap when this bag is opened and moved to fruiting.</div>' +
+             '<button class="btn" data-act="saveFruiting">Sent to fruiting</button></div>';
+      }
       h += '<div class="card" id="harvestCard"><h2>Log harvest - flush ' + (harvests.length + 1) + '</h2>' +
            '<input class="big" type="number" id="g" inputmode="decimal" min="0" step="0.1" placeholder="grams">' +
            '<button class="btn" data-act="saveHarvest">Save weight</button></div>' +
@@ -129,6 +136,9 @@
         return '<li><div class="grow"><b>' + grams(e.grams) + '</b><div class="muted">Flush ' + e.flush + ' - ' + fmtDate(e.ts) + '</div></div>' +
                '<button class="x" data-act="void" data-id="' + e.id + '" aria-label="Delete">&#10005;</button></li>';
       }).join('') + '</ul></div>';
+    }
+    if (fruiting && !discard) {
+      h += '<button class="btn ghost small" data-act="void" data-id="' + fruiting.id + '">Undo sent to fruiting</button>';
     }
     $('#v-bag').innerHTML = h;
     show('bag');
@@ -163,7 +173,8 @@
       var t = bagTotal(bag), f = live('harvest', bag).length, d = live('discard', bag)[0];
       total += t;
       rows += '<tr class="tap" data-bag="' + esc(bag) + '"><td>Bag ' + n + '</td><td>' + f + '</td><td>' + (f ? grams(t) : '-') + '</td>' +
-              '<td>' + (d ? '<span class="tag red">' + esc(d.reason.split(' - ')[0]) + '</span>' : '') + '</td></tr>';
+              '<td>' + (d ? '<span class="tag red">' + esc(d.reason.split(' - ')[0]) + '</span>' :
+                        live('fruiting', bag).length ? '<span class="tag">Fruiting</span>' : '') + '</td></tr>';
     }
     $('#v-batches').innerHTML = '<button class="back" data-act="batches">&lsaquo; All batches</button>' +
       '<div class="card"><h2>' + esc(id) + '</h2><div class="muted">' + esc(b.species || '') + ' - inoculated ' + fmtDate(b.inoc) + '</div>' +
@@ -173,7 +184,7 @@
 
   function renderData() {
     var h = live('harvest').length, d = live('discard').length;
-    $('#countLine').textContent = h + ' harvest entries, ' + d + ' discards, ' + Object.keys(batches).length + ' batches on this phone.';
+    $('#countLine').textContent = h + ' harvest entries, ' + live('fruiting').length + ' sent to fruiting, ' + d + ' discards, ' + Object.keys(batches).length + ' batches on this phone.';
     $('#device').value = cfg.device || '';
     $('#syncUrl').value = cfg.syncUrl || '';
     updateSyncUi();
@@ -200,6 +211,11 @@
     var act = t.dataset.act;
     if (act === 'scan') return show('scan');
     if (act === 'batches') return renderBatches();
+    if (act === 'saveFruiting') {
+      addEvent({ bag: currentBag, type: 'fruiting' });
+      toast(currentBag + ' sent to fruiting');
+      return show('scan');
+    }
     if (act === 'saveHarvest') {
       var g = parseFloat($('#g').value);
       if (!(g > 0) || g > 20000) { toast('Enter the weight in grams'); $('#g').focus(); return; }
@@ -217,7 +233,7 @@
     }
     if (act === 'void') {
       var e = events.filter(function (x) { return x.id === t.dataset.id; })[0]; if (!e) return;
-      var what = e.type === 'harvest' ? 'Delete the ' + grams(e.grams) + ' entry?' : 'Undo the discard?';
+      var what = e.type === 'harvest' ? 'Delete the ' + grams(e.grams) + ' entry?' : e.type === 'fruiting' ? 'Undo sent to fruiting?' : 'Undo the discard?';
       if (!confirm(what)) return;
       e.voided = true;
       // renumber the remaining flushes of this bag so they stay 1, 2, 3...
