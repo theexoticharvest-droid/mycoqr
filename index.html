@@ -20,9 +20,20 @@
   header .pill { font-size: 12px; background: rgba(255,255,255,.18); padding: 3px 9px; border-radius: 99px; }
   main { flex: 1; overflow-y: auto; padding: 14px 14px 20px; }
   nav { display: flex; background: #fff; border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
-  nav button { flex: 1; padding: 13px 0; font-size: 14px; font-weight: 600; background: none; border: 0; color: var(--mute); border-top: 3px solid transparent; }
+  nav button, nav a { flex: 1; padding: 13px 0; font-size: 14px; font-weight: 600; font-family: inherit; text-align: center; text-decoration: none; background: none; border: 0; color: var(--mute); border-top: 3px solid transparent; }
   nav button.on { color: var(--green); border-top-color: var(--green); }
+  nav[hidden], #homeBtn[hidden] { display: none; }
+  #homeBtn { background: rgba(255,255,255,.18); color: #fff; border: 0; border-radius: 99px; padding: 6px 12px; font-size: 13px; font-weight: 700; font-family: inherit; }
   .view { display: none; } .view.on { display: block; }
+
+  .hero { padding: 6px 2px 14px; }
+  .hero h2 { margin: 0; font-size: 24px; } .hero p { margin: 4px 0 0; color: var(--mute); font-size: 14px; }
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .tile { display: flex; flex-direction: column; justify-content: flex-end; gap: 4px; min-height: 150px; padding: 16px 14px; border-radius: 18px; border: 2px solid var(--green); text-decoration: none; text-align: left; font-family: inherit; }
+  .tile svg { width: 44px; height: 44px; margin-bottom: auto; }
+  .tile b { font-size: 21px; } .tile span { font-size: 12.5px; opacity: .85; }
+  .tile.primary { background: var(--green); color: #fff; } .tile.alt { background: #fff; color: var(--dark); }
+  .sec { margin: 16px 2px 8px; font-size: 13px; letter-spacing: .6px; text-transform: uppercase; color: var(--mute); }
 
   .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
   .card h2 { margin: 0 0 8px; font-size: 16px; }
@@ -73,11 +84,42 @@
 <header>
   <h1>MycoQR</h1>
   <span class="pill" id="syncPill" hidden></span>
+  <button id="homeBtn" data-act="home" hidden>Home</button>
 </header>
 
 <main>
+  <!-- Home -->
+  <section class="view on" id="v-home">
+    <div class="hero">
+      <h2>The Fungi Company</h2>
+      <p id="homeLine">Substrate Tracker</p>
+      <p style="font-size:12.5px;font-style:italic">Spawn, LC, Agar coming soon…</p>
+    </div>
+    <div class="tiles">
+      <button class="tile primary" data-tab="scan">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/><rect x="8" y="8" width="3" height="3"/><rect x="13" y="8" width="3" height="3"/><rect x="8" y="13" width="3" height="3"/><path d="M13 13h3v3"/></svg>
+        <b>Scan</b><span>Fruiting, harvest weight, discard</span>
+      </button>
+      <a class="tile alt" href="labels.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><rect x="7" y="14" width="10" height="7"/></svg>
+        <b>Labels</b><span>Print QR labels for a new batch</span>
+      </a>
+    </div>
+    <div class="card">
+      <div class="stat" style="margin-top:0">
+        <div><b id="hBatches">0</b><span>BATCHES</span></div>
+        <div><b id="hFruiting">0</b><span>BAGS FRUITING</span></div>
+        <div><b id="hYield">0 g</b><span>TOTAL YIELD</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Recent activity</h2>
+      <ul class="list" id="recent"></ul>
+    </div>
+  </section>
+
   <!-- Scan -->
-  <section class="view on" id="v-scan">
+  <section class="view" id="v-scan">
     <div id="camBox">
       <video id="cam" playsinline muted></video>
       <div class="frame"></div>
@@ -103,6 +145,9 @@
 
   <!-- Data -->
   <section class="view" id="v-data">
+    <h2 class="sec" style="margin-top:0">Batches</h2>
+    <div id="batchList"></div>
+    <h2 class="sec">Export and settings</h2>
     <div class="card">
       <h2>Export</h2>
       <div class="muted" id="countLine"></div>
@@ -111,8 +156,8 @@
     </div>
     <div class="card">
       <h2>This phone</h2>
-      <div class="muted" style="margin-bottom:6px">Name recorded with each entry</div>
-      <input type="text" id="device" placeholder="e.g. Phone A">
+      <input type="text" id="device" placeholder="Phone name, e.g. Phone A" autocomplete="off">
+      <div class="muted" id="deviceLine" style="margin-top:6px"></div>
     </div>
     <div class="card">
       <h2>Tracker sync (optional)</h2>
@@ -125,15 +170,14 @@
   </section>
 </main>
 
-<nav>
-  <button data-tab="scan" class="on">Scan</button>
-  <button data-tab="batches">Batches</button>
+<nav hidden>
+  <button data-tab="scan">Scan</button>
   <button data-tab="data">Data</button>
 </nav>
 
 <div id="toast"></div>
 
 <script src="vendor/jsQR.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

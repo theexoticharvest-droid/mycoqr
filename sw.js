@@ -1,6 +1,6 @@
 // MycoQR service worker: lets the app open with no signal. Network first, cached copy as fallback.
-var CACHE = 'mycoqr-v1';
-var SHELL = ['./', 'index.html', 'app.js', 'vendor/jsQR.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
+var CACHE = 'mycoqr-v4';
+var SHELL = ['./', 'index.html', 'app.js', 'labels.html', 'vendor/jsQR.js', 'vendor/qrcode.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', function (e) {
   e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));
@@ -14,7 +14,8 @@ self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   e.respondWith(
-    fetch(req).then(function (res) {
+    // no-cache = always check with the server, so a page never pairs with an older script
+    fetch(req, { cache: 'no-cache' }).then(function (res) {
       var copy = res.clone();
       caches.open(CACHE).then(function (c) { c.put(req, copy); });
       return res;

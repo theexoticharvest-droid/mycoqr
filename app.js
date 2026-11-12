@@ -85,10 +85,13 @@
   var currentBag = null;
   function show(view) {
     document.querySelectorAll('.view').forEach(function (v) { v.classList.toggle('on', v.id === 'v-' + view); });
-    var tab = view === 'bag' ? 'scan' : view === 'batch' ? 'batches' : view;
+    // home has no tab bar; a bag belongs to the Scan tab and a batch table to the Data tab
+    var tab = view === 'bag' ? 'scan' : view === 'batches' ? 'data' : view;
     document.querySelectorAll('nav button').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === tab); });
+    $('nav').hidden = view === 'home';
+    $('#homeBtn').hidden = view === 'home';
     if (view === 'scan') startCam(); else stopCam();
-    if (view === 'batches') renderBatches();
+    if (view === 'home') renderHome();
     if (view === 'data') renderData();
     $('main').scrollTop = 0;
   }
@@ -144,13 +147,31 @@
     show('bag');
   }
 
+  function renderHome() {
+    var fruiting = 0, seen = {};
+    live('fruiting').forEach(function (e) { if (!seen[e.bag] && !live('discard', e.bag).length) { seen[e.bag] = 1; fruiting++; } });
+    var total = live('harvest').reduce(function (s, e) { return s + e.grams; }, 0);
+    $('#hBatches').textContent = Object.keys(batches).length;
+    $('#hFruiting').textContent = fruiting;
+    $('#hYield').textContent = total >= 1000 ? (Math.round(total / 10) / 100) + ' kg' : grams(total);
+    var d = new Date();
+    $('#homeLine').textContent = 'Substrate Tracker - ' + pad(d.getDate()) + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear();
+    var recent = events.filter(function (e) { return !e.voided && e.type !== 'void'; }).slice(-5).reverse();
+    $('#recent').innerHTML = recent.length ? recent.map(function (e) {
+      var what = e.type === 'harvest' ? 'Harvest ' + grams(e.grams) + ' (flush ' + e.flush + ')' :
+                 e.type === 'fruiting' ? 'Sent to fruiting' : 'Discarded - ' + e.reason;
+      return '<li data-bag="' + esc(e.bag) + '"><div class="grow"><b>' + esc(e.bag) + '</b><div class="muted">' + esc(what) + '</div></div>' +
+             '<span class="muted">' + fmtDate(e.ts) + '</span></li>';
+    }).join('') : '<li><div class="muted">Nothing logged yet. Print labels for a batch, then scan a bag.</div></li>';
+  }
+
   function renderBatches() {
     var ids = Object.keys(batches).sort().reverse();
     if (!ids.length) {
-      $('#v-batches').innerHTML = '<div class="card"><h2>No batches yet</h2><div class="muted">Scan a bag label and its batch appears here.</div></div>';
+      $('#batchList').innerHTML = '<div class="card"><h2>No batches yet</h2><div class="muted">Scan a bag label and its batch appears here.</div></div>';
       return;
     }
-    $('#v-batches').innerHTML = ids.map(function (id) {
+    $('#batchList').innerHTML = ids.map(function (id) {
       var b = batches[id];
       var total = live('harvest').filter(function (e) { return e.batch === id; }).reduce(function (s, e) { return s + e.grams; }, 0);
       var lost = live('discard').filter(function (e) { return e.batch === id; }).length;
@@ -176,13 +197,15 @@
               '<td>' + (d ? '<span class="tag red">' + esc(d.reason.split(' - ')[0]) + '</span>' :
                         live('fruiting', bag).length ? '<span class="tag">Fruiting</span>' : '') + '</td></tr>';
     }
-    $('#v-batches').innerHTML = '<button class="back" data-act="batches">&lsaquo; All batches</button>' +
+    $('#v-batches').innerHTML = '<button class="back" data-act="batches">&lsaquo; Data</button>' +
       '<div class="card"><h2>' + esc(id) + '</h2><div class="muted">' + esc(b.species || '') + ' - inoculated ' + fmtDate(b.inoc) + '</div>' +
       '<table style="margin-top:10px"><tr><th>Bag</th><th>Flushes</th><th>Yield</th><th></th></tr>' + rows +
       '<tr><td><b>Total</b></td><td></td><td><b>' + grams(total) + '</b></td><td></td></tr></table></div>';
+    show('batches');
   }
 
   function renderData() {
+    renderBatches();
     var h = live('harvest').length, d = live('discard').length;
     $('#countLine').textContent = h + ' harvest entries, ' + live('fruiting').length + ' sent to fruiting, ' + d + ' discards, ' + Object.keys(batches).length + ' batches on this phone.';
     $('#device').value = cfg.device || '';
@@ -210,7 +233,8 @@
 
     var act = t.dataset.act;
     if (act === 'scan') return show('scan');
-    if (act === 'batches') return renderBatches();
+    if (act === 'home') return show('home');
+    if (act === 'batches') return show('data');
     if (act === 'saveFruiting') {
       addEvent({ bag: currentBag, type: 'fruiting' });
       toast(currentBag + ' sent to fruiting');
@@ -245,13 +269,20 @@
 
   $('#manualGo').addEventListener('click', function () { if (openCode($('#manualId').value)) $('#manualId').value = ''; });
   $('#manualId').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('#manualGo').click(); });
-  $('#device').addEventListener('change', function () { cfg.device = this.value.trim(); save('mq_cfg', cfg); });
+  // saved on every keystroke, so it survives closing the app straight after typing
+  $('#device').addEventListener('input', function () { cfg.device = this.value.trim(); save('mq_cfg', cfg); updateSyncUi(); });
+  $('#device').addEventListener('change', function () { sync(); });
   $('#syncUrl').addEventListener('change', function () {
     var v = this.value.trim();
     if (v && !/^https:\/\//i.test(v)) { toast('The address must start with https://'); this.value = cfg.syncUrl || ''; return; }
     cfg.syncUrl = v; save('mq_cfg', cfg); updateSyncUi(); sync();
+    if (v && !cfg.device) { toast('Enter a phone name first'); $('#device').focus(); }
   });
-  $('#syncNow').addEventListener('click', function () { if (!cfg.syncUrl) return toast('No tracker address set'); sync(true); });
+  $('#syncNow').addEventListener('click', function () {
+    if (!cfg.syncUrl) return toast('No tracker address set');
+    if (!cfg.device) { toast('Enter a phone name first'); $('#device').focus(); return; }
+    sync(true);
+  });
 
   // ---------- CSV export ----------
   function csvCell(v) {
@@ -262,7 +293,7 @@
   function rowFor(e) {
     var b = batches[e.batch] || {}, d = new Date(e.ts);
     return [e.id, e.ts, localIso(d), e.batch, e.bag, bagNo(e.bag), e.type, e.flush || '', e.type === 'harvest' ? e.grams : '',
-            e.reason || '', e.note || '', b.species || '', b.inoc || '', b.spawn || '', b.bags || '', e.device || ''];
+            e.reason || '', e.note || '', b.species || '', b.inoc || '', b.spawn || '', b.bags || '', e.device || cfg.device || ''];
   }
   var COLS = ['entry_id','timestamp','date','batch','bag','bag_no','type','flush','grams','reason','note','species','inoculation','spawn','bags_in_batch','device'];
 
@@ -288,11 +319,16 @@
   function updateSyncUi() {
     var n = pending().length, pill = $('#syncPill');
     pill.hidden = !cfg.syncUrl;
-    pill.textContent = n ? n + ' to sync' : 'Synced';
-    $('#syncLine').textContent = cfg.syncUrl ? (n ? n + ' entries waiting to send.' : 'Everything is sent.') : 'Sync is off.';
+    pill.textContent = !cfg.device ? 'Name needed' : n ? n + ' to sync' : 'Synced';
+    $('#syncLine').textContent = !cfg.syncUrl ? 'Sync is off.' :
+      !cfg.device ? 'Nothing is sent until this phone has a name (above).' :
+      n ? n + ' entries waiting to send.' : 'Everything is sent.';
+    $('#deviceLine').textContent = cfg.device ? 'Saved on this phone. Recorded with each entry.' : 'Required before entries can go to the tracker.';
+    $('#deviceLine').style.color = cfg.device ? '' : 'var(--red)';
   }
   function sync(loud) {
     updateSyncUi();
+    if (!cfg.device) return;   // the tracker needs to know which phone logged each entry
     if (!cfg.syncUrl || syncing || !navigator.onLine) { if (loud && !navigator.onLine) toast('No internet'); return; }
     var batch = pending().slice(0, 50);
     if (!batch.length) { if (loud) toast('Everything is already sent'); return; }
@@ -384,6 +420,6 @@
   window.MycoQR = { openCode: openCode, parseCode: parseCode };   // used for testing
   if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(function () {});
   updateSyncUi();
-  show('scan');
+  show('home');
   sync();
 })();

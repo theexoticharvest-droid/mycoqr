@@ -47,6 +47,7 @@
 <body>
 
 <div class="panel">
+  <a href="index.html" style="display:inline-block;margin-bottom:8px;color:#2e6b34;font-weight:bold;text-decoration:none">&lsaquo; Back to home</a>
   <h1>MycoQR label sheet</h1>
   <div class="fields">
     <label>Header<input id="company" value="THE FUNGI COMPANY"></label>
@@ -58,7 +59,7 @@
       </datalist></label>
     <label>Batch #<input id="batch" value="LM-26-B02"></label>
     <label>Inoculation date<input id="inoc" type="date"></label>
-    <label>Days to fruiting<input id="days" type="number" min="0" value="21"></label>
+    <label>Days to fruiting (auto, at 24 &deg;C)<input id="days" type="number" min="0" value="21"></label>
     <label>Spawn source &amp; gen<input id="spawn" value="S-002 : WPM (G1)"></label>
     <label>Number of bags<input id="bags" type="number" min="1" max="99" value="10"></label>
     <label>Labels per A4 page<select id="per"><option value="12">12 (recommended)</option><option value="10">10 (taller)</option></select></label>
@@ -186,7 +187,11 @@
     if (!words.length) return '';
     return (words.length > 1 ? words[0][0] + words[1][0] : words[0].slice(0, 2)).toUpperCase();
   }
+  // Days from inoculation to fruiting at a steady 24 C. Estimates - edit here as real batches show otherwise.
+  var SPECIES_DAYS = { "lion's mane (h. erinaceus)": 21, 'king oyster (p. eryngii)': 28, 'reishi (g. lucidum)': 30 };
   function syncPrefix() {
+    var days = SPECIES_DAYS[el.species.value.trim().toLowerCase()];
+    if (days) el.days.value = days;   // other species keep whatever is typed
     var code = speciesCode(el.species.value);
     if (!code) return;
     var b = el.batch.value.trim();
