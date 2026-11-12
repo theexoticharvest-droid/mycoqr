@@ -12,7 +12,9 @@
   function save(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
   var batches = load('mq_batches', {});   // id -> {species, inoc, days, spawn, bags}
   var events = load('mq_events', []);     // {id, ts, bag, batch, type, grams, flush, reason, note, device, voided, synced}
-  var cfg = load('mq_cfg', { device: '', syncUrl: '' });
+  var cfg = load('mq_cfg', { device: '' });
+  // Google Sheets tracker (Apps Script web app). Built in so phones need no setup; change here if redeployed.
+  var TRACKER_URL = 'https://script.google.com/macros/s/AKfycbwfLHzk_PuJ6jg2eHLCgG_A_QxPE2lH_K8tjVcDEoHnPRFIgH1Nd92xH8c3sKLU7cbc/exec';
   function persist() { save('mq_batches', batches); save('mq_events', events); }
 
   // ---------- helpers ----------
@@ -209,7 +211,6 @@
     var h = live('harvest').length, d = live('discard').length;
     $('#countLine').textContent = h + ' harvest entries, ' + live('fruiting').length + ' sent to fruiting, ' + d + ' discards, ' + Object.keys(batches).length + ' batches on this phone.';
     $('#device').value = cfg.device || '';
-    $('#syncUrl').value = cfg.syncUrl || '';
     updateSyncUi();
   }
 
@@ -272,14 +273,7 @@
   // saved on every keystroke, so it survives closing the app straight after typing
   $('#device').addEventListener('input', function () { cfg.device = this.value.trim(); save('mq_cfg', cfg); updateSyncUi(); });
   $('#device').addEventListener('change', function () { sync(); });
-  $('#syncUrl').addEventListener('change', function () {
-    var v = this.value.trim();
-    if (v && !/^https:\/\//i.test(v)) { toast('The address must start with https://'); this.value = cfg.syncUrl || ''; return; }
-    cfg.syncUrl = v; save('mq_cfg', cfg); updateSyncUi(); sync();
-    if (v && !cfg.device) { toast('Enter a phone name first'); $('#device').focus(); }
-  });
   $('#syncNow').addEventListener('click', function () {
-    if (!cfg.syncUrl) return toast('No tracker address set');
     if (!cfg.device) { toast('Enter a phone name first'); $('#device').focus(); return; }
     sync(true);
   });
@@ -318,10 +312,9 @@
   function pending() { return events.filter(function (e) { return !e.synced; }); }
   function updateSyncUi() {
     var n = pending().length, pill = $('#syncPill');
-    pill.hidden = !cfg.syncUrl;
+    pill.hidden = false;
     pill.textContent = !cfg.device ? 'Name needed' : n ? n + ' to sync' : 'Synced';
-    $('#syncLine').textContent = !cfg.syncUrl ? 'Sync is off.' :
-      !cfg.device ? 'Nothing is sent until this phone has a name (above).' :
+    $('#syncLine').textContent = !cfg.device ? 'Nothing is sent until this phone has a name (above).' :
       n ? n + ' entries waiting to send.' : 'Everything is sent.';
     $('#deviceLine').textContent = cfg.device ? 'Saved on this phone. Recorded with each entry.' : 'Required before entries can go to the tracker.';
     $('#deviceLine').style.color = cfg.device ? '' : 'var(--red)';
@@ -329,7 +322,7 @@
   function sync(loud) {
     updateSyncUi();
     if (!cfg.device) return;   // the tracker needs to know which phone logged each entry
-    if (!cfg.syncUrl || syncing || !navigator.onLine) { if (loud && !navigator.onLine) toast('No internet'); return; }
+    if (syncing || !navigator.onLine) { if (loud && !navigator.onLine) toast('No internet'); return; }
     var batch = pending().slice(0, 50);
     if (!batch.length) { if (loud) toast('Everything is already sent'); return; }
     syncing = true;
@@ -337,7 +330,7 @@
       return { id: e.id, type: e.type, ref: e.ref || '', voided: !!e.voided, row: rowFor(e) };
     }) });
     // text/plain keeps this a simple request, which a Google Apps Script web app accepts without CORS preflight
-    fetch(cfg.syncUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: body })
+    fetch(TRACKER_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: body })
       .then(function (r) { return r.json(); })
       .then(function (j) {
         if (!j || !j.ok) throw new Error('rejected');
